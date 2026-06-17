@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Excel Column Extractor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--surface:#181c27;--surface2:#1f2436;--surface3:#252b3d;
+  --border:#2a3048;--accent:#4f8ef7;--accent2:#7c5cfc;--green:#22d3a0;
+  --red:#f75f5f;--orange:#f7a94f;--text:#e8ecf5;--muted:#6b7591;
+  --tag-bg:#1e2d4a;--tag-border:#2d4a80;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;}
+
+/* ── Header ── */
+header{padding:20px 32px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;}
+.logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+header h1{font-size:1.1rem;font-weight:600;letter-spacing:-.02em;}
+header p{font-size:0.75rem;color:var(--muted);margin-top:2px;}
+
+/* ── Layout ── */
+.app{flex:1;display:grid;grid-template-columns:380px 1fr;min-height:0;}
+.sidebar{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;}
+.right-panel{display:flex;flex-direction:column;overflow:hidden;}
+
+/* ── Sidebar sections ── */
+.s-section{padding:20px 24px;border-bottom:1px solid var(--border);}
+.s-label{font-size:0.68rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.s-label .step-badge{width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff;font-size:0.6rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+
+/* ── Drop zone ── */
+.drop-zone{border:2px dashed var(--border);border-radius:12px;padding:28px 16px;text-align:center;cursor:pointer;transition:all .2s;position:relative;background:var(--surface);}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--accent);background:rgba(79,142,247,.05);}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;}
+.drop-zone .drop-icon{font-size:28px;margin-bottom:8px;}
+.drop-zone h3{font-size:0.85rem;font-weight:500;margin-bottom:4px;}
+.drop-zone p{font-size:0.72rem;color:var(--muted);}
+
+/* ── Sheet multi-select ── */
+.sheets-grid{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;padding-right:2px;}
+.sheet-chip{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;font-size:0.8rem;user-select:none;}
+.sheet-chip:hover{border-color:var(--accent);}
+.sheet-chip.active{background:var(--tag-bg);border-color:var(--accent);color:var(--accent);}
+.sheet-chip .sheet-check{width:14px;height:14px;border:1.5px solid var(--border);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.sheet-chip.active .sheet-check{background:var(--accent);border-color:var(--accent);}
+.sheet-chip.active .sheet-check::after{content:'✓';font-size:9px;color:#fff;font-weight:700;}
+.sheet-chip .sheet-rows{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:var(--muted);}
+.sheet-chip.active .sheet-rows{color:var(--accent);}
+
+/* ── Column selection mode tabs ── */
+.mode-tabs{display:flex;gap:4px;background:var(--surface);padding:4px;border-radius:8px;margin-bottom:14px;}
+.mode-tab{flex:1;padding:7px;text-align:center;font-size:0.75rem;font-weight:500;border-radius:6px;cursor:pointer;border:none;background:none;color:var(--muted);transition:all .15s;}
+.mode-tab.active{background:var(--surface3);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.3);}
+
+/* ── Column chips (by name) ── */
+.columns-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;max-height:200px;overflow-y:auto;padding-right:2px;}
+.columns-grid::-webkit-scrollbar,.sheets-grid::-webkit-scrollbar{width:4px;}
+.columns-grid::-webkit-scrollbar-thumb,.sheets-grid::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.col-chip{display:flex;align-items:center;gap:6px;padding:7px 9px;background:var(--surface);border:1px solid var(--border);border-radius:7px;cursor:pointer;transition:all .15s;font-size:0.75rem;user-select:none;}
+.col-chip:hover{border-color:var(--accent);}
+.col-chip.selected{background:var(--tag-bg);border-color:var(--accent);color:var(--accent);}
+.col-chip .check{width:13px;height:13px;border:1.5px solid var(--border);border-radius:3px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.col-chip.selected .check{background:var(--accent);border-color:var(--accent);}
+.col-chip.selected .check::after{content:'✓';font-size:8px;color:#fff;font-weight:700;}
+.col-chip .col-num{font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:var(--muted);flex-shrink:0;}
+.col-chip.selected .col-num{color:rgba(79,142,247,.7);}
+.col-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* ── Column number input ── */
+.col-num-input-area{display:flex;flex-direction:column;gap:8px;}
+.col-num-hint{font-size:0.72rem;color:var(--muted);line-height:1.5;}
+.col-num-hint code{font-family:'JetBrains Mono',monospace;background:var(--surface3);padding:1px 5px;border-radius:3px;font-size:0.68rem;color:var(--orange);}
+textarea.col-num-input{width:100%;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:0.82rem;outline:none;resize:vertical;min-height:72px;transition:border-color .2s;}
+textarea.col-num-input:focus{border-color:var(--accent);}
+.col-num-preview{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
+.cn-tag{font-family:'JetBrains Mono',monospace;font-size:0.68rem;padding:2px 7px;border-radius:4px;background:var(--tag-bg);border:1px solid var(--tag-border);color:var(--accent);}
+.cn-tag.invalid{background:rgba(247,95,95,.1);border-color:rgba(247,95,95,.3);color:var(--red);}
+
+/* ── Filters ── */
+.filters-list{display:flex;flex-direction:column;gap:8px;}
+.filter-row{display:flex;gap:6px;align-items:center;}
+.filter-row .remove-btn{width:28px;height:28px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;}
+.filter-row .remove-btn:hover{border-color:var(--red);color:var(--red);}
+.filter-logic-toggle{display:flex;gap:4px;margin-bottom:8px;}
+.logic-btn{padding:4px 12px;border-radius:6px;font-size:0.72rem;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--muted);transition:all .15s;}
+.logic-btn.active{background:var(--tag-bg);border-color:var(--accent);color:var(--accent);}
+
+/* ── Inputs ── */
+select,input[type="text"]{width:100%;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'Inter',sans-serif;font-size:0.8rem;outline:none;transition:border-color .2s;appearance:none;}
+select:focus,input[type="text"]:focus{border-color:var(--accent);}
+select{cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7591' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:8px;font-family:'Inter',sans-serif;font-size:0.8rem;font-weight:500;cursor:pointer;border:none;transition:all .2s;}
+.btn-ghost{background:var(--surface);border:1px solid var(--border);color:var(--text);}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+.btn-ghost:disabled{opacity:.4;cursor:not-allowed;}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 14px rgba(79,142,247,.3);}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(79,142,247,.4);}
+.btn-primary:active{transform:translateY(0);}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.btn-success{background:linear-gradient(135deg,#1aab82,#22d3a0);color:#fff;box-shadow:0 4px 14px rgba(34,211,160,.25);}
+.btn-success:hover{transform:translateY(-1px);}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+
+/* ── Right panel ── */
+.right-toolbar{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.right-toolbar-left{display:flex;align-items:center;gap:10px;}
+.extract-big{padding:10px 22px;font-size:0.85rem;}
+
+/* ── Status bar ── */
+.status-bar{padding:8px 24px;font-size:0.75rem;border-bottom:1px solid var(--border);min-height:36px;display:flex;align-items:center;gap:8px;}
+.status-bar.error{color:var(--red);}
+.status-bar.success{color:var(--green);}
+.status-bar.info{color:var(--accent);}
+.status-bar.warn{color:var(--orange);}
+
+/* ── Tabs (multi-sheet result view) ── */
+.result-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);overflow-x:auto;padding:0 24px;}
+.result-tab{padding:10px 18px;font-size:0.78rem;font-weight:500;cursor:pointer;border:none;background:none;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;white-space:nowrap;}
+.result-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.result-tab .tab-count{font-family:'JetBrains Mono',monospace;font-size:0.65rem;background:rgba(79,142,247,.12);color:var(--accent);padding:1px 6px;border-radius:3px;margin-left:6px;}
+
+/* ── Preview table ── */
+.preview-wrap{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.table-scroll{flex:1;overflow:auto;}
+.table-scroll::-webkit-scrollbar{width:5px;height:5px;}
+.table-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+table{width:100%;border-collapse:collapse;font-size:0.77rem;}
+thead th{background:var(--surface2);padding:9px 14px;text-align:left;font-weight:600;color:var(--muted);font-size:0.68rem;letter-spacing:.05em;text-transform:uppercase;position:sticky;top:0;white-space:nowrap;border-bottom:1px solid var(--border);}
+thead th .th-num{font-family:'JetBrains Mono',monospace;font-size:0.62rem;opacity:.5;margin-right:4px;}
+tbody td{padding:8px 14px;border-bottom:1px solid rgba(42,48,72,.4);white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;}
+tbody tr:hover td{background:rgba(79,142,247,.03);}
+tbody tr:last-child td{border-bottom:none;}
+.sheet-source-badge{font-size:0.65rem;font-family:'JetBrains Mono',monospace;padding:1px 5px;border-radius:3px;background:rgba(124,92,252,.12);color:var(--accent2);border:1px solid rgba(124,92,252,.25);}
+
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:10px;color:var(--muted);padding:40px;}
+.empty-state .big-icon{font-size:36px;}
+.empty-state p{font-size:0.82rem;text-align:center;line-height:1.6;}
+
+.match-val{color:var(--accent);font-weight:600;}
+.divider{height:1px;background:var(--border);margin:4px 0;}
+
+footer{border-top:1px solid var(--border);padding:11px 32px;font-size:0.7rem;color:var(--muted);display:flex;justify-content:space-between;align-items:center;}
+.badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:0.65rem;font-weight:600;letter-spacing:.03em;}
+.badge-blue{background:rgba(79,142,247,.12);color:var(--accent);}
+.badge-purple{background:rgba(124,92,252,.12);color:var(--accent2);}
+
+.select-row{display:flex;gap:6px;margin-bottom:8px;}
+.select-row .btn{font-size:0.7rem;padding:4px 10px;}
+
+.col-index-map{font-size:0.68rem;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:6px;background:var(--surface2);padding:8px 10px;border-radius:6px;max-height:80px;overflow-y:auto;line-height:1.8;}
+.col-index-map span{margin-right:10px;white-space:nowrap;}
+.col-index-map span.hi{color:var(--orange);}
+
+@media(max-width:800px){
+  .app{grid-template-columns:1fr;}
+  .sidebar{border-right:none;border-bottom:1px solid var(--border);}
+  header{padding:14px 16px;}
+  .s-section{padding:14px 16px;}
+  footer{padding:10px 16px;flex-direction:column;gap:4px;}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-icon">⚡</div>
+  <div>
+    <h1>Excel Column Extractor</h1>
+    <p>Pick columns by name or number · Filter values · Extract from multiple sheets at once</p>
+  </div>
+</header>
+
+<div class="app">
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<div class="sidebar">
+
+  <!-- 1. Upload -->
+  <div class="s-section">
+    <div class="s-label"><span class="step-badge">1</span> Upload File</div>
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+      <div class="drop-icon">📂</div>
+      <h3 id="dropLabel">Drop Excel file here</h3>
+      <p>.xlsx &nbsp;·&nbsp; .xls &nbsp;·&nbsp; .csv</p>
+    </div>
+  </div>
+
+  <!-- 2. Sheet selection -->
+  <div class="s-section" id="sheetSection" style="display:none">
+    <div class="s-label"><span class="step-badge">2</span> Choose Sheets to Extract</div>
+    <div class="select-row">
+      <button class="btn btn-ghost" onclick="toggleAllSheets(true)">✓ All</button>
+      <button class="btn btn-ghost" onclick="toggleAllSheets(false)">✕ None</button>
+    </div>
+    <div class="sheets-grid" id="sheetsGrid"></div>
+  </div>
+
+  <!-- 3. Column selection -->
+  <div class="s-section" id="colSection" style="display:none">
+    <div class="s-label"><span class="step-badge">3</span> Select Columns</div>
+    <div class="mode-tabs">
+      <button class="mode-tab active" onclick="switchMode('name')" id="tabName">By Name</button>
+      <button class="mode-tab" onclick="switchMode('number')" id="tabNum">By Number</button>
+    </div>
+
+    <!-- By Name -->
+    <div id="modeByName">
+      <div class="select-row">
+        <button class="btn btn-ghost" onclick="selectAll()">✓ All</button>
+        <button class="btn btn-ghost" onclick="clearAll()">✕ None</button>
+      </div>
+      <div class="columns-grid" id="columnsGrid"></div>
+    </div>
+
+    <!-- By Number -->
+    <div id="modeByNumber" style="display:none">
+      <div class="col-num-input-area">
+        <div class="col-num-hint">
+          Enter column numbers (1-based). Use commas or ranges:<br>
+          <code>1,3,5</code> &nbsp; <code>2-6</code> &nbsp; <code>1,4-7,10</code>
+        </div>
+        <textarea class="col-num-input" id="colNumInput" placeholder="e.g. 1,3,5-8,12" oninput="parseColNumbers()"></textarea>
+        <div class="col-num-preview" id="colNumPreview"></div>
+        <div class="col-index-map" id="colIndexMap"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Filters -->
+  <div class="s-section" id="filterSection" style="display:none">
+    <div class="s-label"><span class="step-badge">4</span> Filter Rows <span style="font-size:0.62rem;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+    <div class="filter-logic-toggle" id="logicToggle" style="display:none">
+      <button class="logic-btn active" id="logicAnd" onclick="setLogic('AND')">AND</button>
+      <button class="logic-btn" id="logicOr" onclick="setLogic('OR')">OR</button>
+    </div>
+    <div class="filters-list" id="filtersList"></div>
+    <div class="btn-row" style="margin-top:8px;">
+      <button class="btn btn-ghost" onclick="addFilter()">＋ Add filter</button>
+    </div>
+    <div style="margin-top:8px;font-size:0.7rem;color:var(--muted);">
+      Operators: starts with · ends with · contains · equals · not contains · regex
+    </div>
+  </div>
+
+</div><!-- /sidebar -->
+
+<!-- ═══════════════════ RIGHT ═══════════════════ -->
+<div class="right-panel">
+
+  <div class="right-toolbar">
+    <div class="right-toolbar-left">
+      <button class="btn btn-primary extract-big" id="extractBtn" onclick="runExtract()" disabled>⚡ Extract All Selected Sheets</button>
+    </div>
+    <div class="btn-row" id="downloadRow" style="display:none">
+      <button class="btn btn-success" onclick="downloadExcel()">⬇ Excel</button>
+      <button class="btn btn-ghost" onclick="downloadCSV()">⬇ CSV</button>
+    </div>
+  </div>
+
+  <div class="status-bar info" id="statusBar">Upload an Excel file to get started.</div>
+
+  <!-- Result tabs (one per sheet) -->
+  <div id="resultTabsRow" style="display:none">
+    <div class="result-tabs" id="resultTabs"></div>
+  </div>
+
+  <div class="preview-wrap" id="previewWrap">
+    <div class="empty-state" id="emptyState">
+      <div class="big-icon">🗂️</div>
+      <p>Configure columns &amp; filters on the left,<br>then click <strong>Extract</strong> to see results here.</p>
+    </div>
+    <div class="table-scroll" id="tableScroll" style="display:none">
+      <table>
+        <thead id="previewHead"></thead>
+        <tbody id="previewBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /right -->
+</div><!-- /app -->
+
+<footer>
+  <span>100% client-side — no data ever leaves your browser.</span>
+  <span><span class="badge badge-blue">SheetJS</span> &nbsp;<span class="badge badge-purple">v2.0</span></span>
+</footer>
+
+<script>
+// ═══════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════
+let workbook = null;
+let sheetMeta = {};        // { sheetName: { rows, headers } }
+let selectedSheets = new Set();
+let allHeaders = [];       // from first selected sheet (for display)
+let selectedCols = new Set();  // header names
+let parsedColNumbers = []; // 1-based indices from number input
+let colMode = 'name';      // 'name' | 'number'
+let filterCount = 0;
+let filterLogic = 'AND';   // 'AND' | 'OR'
+let resultSheets = {};     // { sheetName: rows[] } after extract
+let activeResultTab = null;
+let allExtracted = [];     // combined for download
+
+// ═══════════════════════════════════════════════════
+// File Load
+// ═══════════════════════════════════════════════════
+document.getElementById('fileInput').addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      workbook = XLSX.read(data, { type: 'array', cellText: false, cellDates: true });
+      document.getElementById('dropLabel').textContent = '📄 ' + file.name;
+
+      // Pre-cache sheet meta
+      sheetMeta = {};
+      workbook.SheetNames.forEach(name => {
+        const ws = workbook.Sheets[name];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+        const headers = rows.length ? Object.keys(rows[0]) : [];
+        sheetMeta[name] = { rows, headers };
+      });
+
+      selectedSheets = new Set(workbook.SheetNames);
+      renderSheetChips();
+      updateFromSelectedSheets();
+
+      document.getElementById('sheetSection').style.display = '';
+      document.getElementById('colSection').style.display = '';
+      document.getElementById('filterSection').style.display = '';
+      document.getElementById('extractBtn').disabled = false;
+
+      setStatus(`✓ Loaded "${file.name}" — ${workbook.SheetNames.length} sheet(s) found.`, 'success');
+    } catch (err) {
+      setStatus('❌ Could not read file: ' + err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ═══════════════════════════════════════════════════
+// Sheet chips
+// ═══════════════════════════════════════════════════
+function renderSheetChips() {
+  const grid = document.getElementById('sheetsGrid');
+  grid.innerHTML = '';
+  workbook.SheetNames.forEach(name => {
+    const meta = sheetMeta[name];
+    const chip = document.createElement('div');
+    chip.className = 'sheet-chip active';
+    chip.dataset.sheet = name;
+    chip.innerHTML = `
+      <span class="sheet-check"></span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${name}</span>
+      <span class="sheet-rows">${meta.rows.length.toLocaleString()} rows</span>
+    `;
+    chip.onclick = () => toggleSheet(chip, name);
+    grid.appendChild(chip);
+  });
+}
+
+function toggleSheet(chip, name) {
+  if (selectedSheets.has(name)) {
+    if (selectedSheets.size === 1) return; // keep at least 1
+    selectedSheets.delete(name);
+    chip.classList.remove('active');
+  } else {
+    selectedSheets.add(name);
+    chip.classList.add('active');
+  }
+  updateFromSelectedSheets();
+}
+
+function toggleAllSheets(on) {
+  document.querySelectorAll('.sheet-chip').forEach(chip => {
+    const name = chip.dataset.sheet;
+    if (on) { selectedSheets.add(name); chip.classList.add('active'); }
+    else if (selectedSheets.size > 1) { selectedSheets.delete(name); chip.classList.remove('active'); }
+  });
+  // keep at least one
+  if (selectedSheets.size === 0 && workbook) {
+    const first = workbook.SheetNames[0];
+    selectedSheets.add(first);
+    document.querySelector(`.sheet-chip[data-sheet="${CSS.escape(first)}"]`)?.classList.add('active');
+  }
+  updateFromSelectedSheets();
+}
+
+function updateFromSelectedSheets() {
+  // Use headers from first selected sheet for column display
+  const firstName = [...selectedSheets][0];
+  if (!firstName) return;
+  allHeaders = sheetMeta[firstName]?.headers || [];
+  selectedCols = new Set(allHeaders);
+  renderColumnChips();
+  updateColIndexMap();
+  updateFilterColumnOptions();
+}
+
+// ═══════════════════════════════════════════════════
+// Column mode switch
+// ═══════════════════════════════════════════════════
+function switchMode(mode) {
+  colMode = mode;
+  document.getElementById('modeByName').style.display = mode === 'name' ? '' : 'none';
+  document.getElementById('modeByNumber').style.display = mode === 'number' ? '' : 'none';
+  document.getElementById('tabName').classList.toggle('active', mode === 'name');
+  document.getElementById('tabNum').classList.toggle('active', mode === 'number');
+}
+
+// ═══════════════════════════════════════════════════
+// Column chips (by name)
+// ═══════════════════════════════════════════════════
+function renderColumnChips() {
+  const grid = document.getElementById('columnsGrid');
+  grid.innerHTML = '';
+  allHeaders.forEach((h, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'col-chip selected';
+    chip.dataset.col = h;
+    chip.innerHTML = `<span class="check"></span><span class="col-num">${i+1}</span><span class="col-name" title="${h}">${h}</span>`;
+    chip.onclick = () => toggleCol(chip, h);
+    grid.appendChild(chip);
+  });
+}
+
+function toggleCol(chip, col) {
+  if (selectedCols.has(col)) { selectedCols.delete(col); chip.classList.remove('selected'); }
+  else { selectedCols.add(col); chip.classList.add('selected'); }
+}
+
+function selectAll() {
+  allHeaders.forEach(h => selectedCols.add(h));
+  document.querySelectorAll('.col-chip').forEach(c => c.classList.add('selected'));
+}
+function clearAll() {
+  selectedCols.clear();
+  document.querySelectorAll('.col-chip').forEach(c => c.classList.remove('selected'));
+}
+
+// ═══════════════════════════════════════════════════
+// Column by number
+// ═══════════════════════════════════════════════════
+function parseColNumbers() {
+  const raw = document.getElementById('colNumInput').value;
+  const nums = new Set();
+  const parts = raw.split(',');
+  parts.forEach(p => {
+    p = p.trim();
+    if (!p) return;
+    const rangeMatch = p.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (rangeMatch) {
+      const a = parseInt(rangeMatch[1]), b = parseInt(rangeMatch[2]);
+      for (let i = Math.min(a,b); i <= Math.max(a,b); i++) nums.add(i);
+    } else if (/^\d+$/.test(p)) {
+      nums.add(parseInt(p));
+    }
+  });
+
+  parsedColNumbers = [...nums].sort((a,b) => a-b);
+  const preview = document.getElementById('colNumPreview');
+  preview.innerHTML = parsedColNumbers.map(n => {
+    const h = allHeaders[n-1];
+    const valid = !!h;
+    return `<span class="cn-tag${valid?'':' invalid'}">${n}${valid ? ':'+h : '?'}</span>`;
+  }).join('');
+}
+
+function updateColIndexMap() {
+  const el = document.getElementById('colIndexMap');
+  if (!allHeaders.length) { el.innerHTML = ''; return; }
+  el.innerHTML = allHeaders.map((h,i) =>
+    `<span class="${parsedColNumbers.includes(i+1)?'hi':''}">${i+1}:${h}</span>`
+  ).join('');
+}
+
+// ═══════════════════════════════════════════════════
+// Filters
+// ═══════════════════════════════════════════════════
+function addFilter() {
+  filterCount++;
+  const id = 'f' + filterCount;
+  const fl = document.getElementById('filtersList');
+  const row = document.createElement('div');
+  row.className = 'filter-row'; row.id = id;
+  row.innerHTML = `
+    <select id="${id}_col" style="flex:1.2;min-width:0">${allHeaders.map(h=>`<option value="${h}">${h}</option>`).join('')}</select>
+    <select id="${id}_op" style="flex:1;min-width:0">
+      <option value="starts">starts with</option>
+      <option value="ends">ends with</option>
+      <option value="contains" selected>contains</option>
+      <option value="equals">equals</option>
+      <option value="not_contains">not contains</option>
+      <option value="regex">regex</option>
+    </select>
+    <input type="text" id="${id}_val" placeholder="value…" style="flex:1.2;min-width:0">
+    <button class="remove-btn" onclick="removeFilter('${id}')">✕</button>
+  `;
+  fl.appendChild(row);
+  const logicRow = document.getElementById('logicToggle');
+  if (document.querySelectorAll('.filter-row').length > 1) logicRow.style.display = 'flex';
+}
+
+function removeFilter(id) {
+  document.getElementById(id)?.remove();
+  if (document.querySelectorAll('.filter-row').length <= 1) {
+    document.getElementById('logicToggle').style.display = 'none';
+  }
+}
+
+function setLogic(l) {
+  filterLogic = l;
+  document.getElementById('logicAnd').classList.toggle('active', l==='AND');
+  document.getElementById('logicOr').classList.toggle('active', l==='OR');
+}
+
+function updateFilterColumnOptions() {
+  document.querySelectorAll('.filter-row').forEach(row => {
+    const sel = row.querySelector('select');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = allHeaders.map(h=>`<option value="${h}"${h===cur?' selected':''}>${h}</option>`).join('');
+  });
+}
+
+function getFilters() {
+  return Array.from(document.querySelectorAll('.filter-row')).map(row => {
+    const id = row.id;
+    return {
+      col: document.getElementById(id+'_col')?.value,
+      op: document.getElementById(id+'_op')?.value,
+      val: (document.getElementById(id+'_val')?.value||'').trim()
+    };
+  }).filter(f => f.col && f.val !== '');
+}
+
+function matchesFilter(cellVal, f) {
+  const v = String(cellVal??'');
+  const fv = f.val;
+  switch(f.op){
+    case 'starts':       return v.toLowerCase().startsWith(fv.toLowerCase());
+    case 'ends':         return v.toLowerCase().endsWith(fv.toLowerCase());
+    case 'contains':     return v.toLowerCase().includes(fv.toLowerCase());
+    case 'equals':       return v.toLowerCase()===fv.toLowerCase();
+    case 'not_contains': return !v.toLowerCase().includes(fv.toLowerCase());
+    case 'regex':        try{return new RegExp(fv,'i').test(v);}catch{return false;}
+    default:             return true;
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// Extract
+// ═══════════════════════════════════════════════════
+function getSelectedHeaders() {
+  if (colMode === 'number') {
+    return parsedColNumbers
+      .map(n => allHeaders[n-1])
+      .filter(Boolean);
+  } else {
+    return allHeaders.filter(h => selectedCols.has(h));
+  }
+}
+
+function runExtract() {
+  if (!workbook) return;
+  const filters = getFilters();
+  const sheetsToProcess = [...selectedSheets];
+
+  if (sheetsToProcess.length === 0) {
+    setStatus('❌ Select at least one sheet.', 'error'); return;
+  }
+
+  resultSheets = {};
+  allExtracted = [];
+  let totalRows = 0;
+  let totalFiltered = 0;
+
+  sheetsToProcess.forEach(sheetName => {
+    const { rows, headers } = sheetMeta[sheetName];
+    // Resolve selected columns per sheet (headers may differ)
+    let cols;
+    if (colMode === 'number') {
+      cols = parsedColNumbers.map(n => headers[n-1]).filter(Boolean);
+    } else {
+      // Match by name, fall back gracefully
+      cols = allHeaders.filter(h => selectedCols.has(h) && headers.includes(h));
+    }
+
+    if (cols.length === 0) {
+      resultSheets[sheetName] = [];
+      return;
+    }
+
+    // Filter rows
+    let filtered = rows;
+    if (filters.length > 0) {
+      filtered = rows.filter(row => {
+        const results = filters.map(f => matchesFilter(row[f.col], f));
+        return filterLogic === 'AND' ? results.every(Boolean) : results.some(Boolean);
+      });
+    }
+
+    totalRows += rows.length;
+    totalFiltered += filtered.length;
+
+    // Project columns + add sheet source
+    const projected = filtered.map(row => {
+      const obj = { __sheet: sheetName };
+      cols.forEach(c => { obj[c] = row[c] ?? ''; });
+      return obj;
+    });
+
+    resultSheets[sheetName] = projected;
+    allExtracted.push(...projected);
+  });
+
+  if (allExtracted.length === 0) {
+    setStatus(`⚠ No rows matched across ${sheetsToProcess.length} sheet(s). Try adjusting filters.`, 'warn');
+  } else {
+    const sheetsWithData = Object.values(resultSheets).filter(r=>r.length>0).length;
+    setStatus(`✓ Extracted ${allExtracted.length.toLocaleString()} rows from ${sheetsWithData} sheet(s)  (${totalRows.toLocaleString()} total scanned)`, 'success');
+  }
+
+  renderResultTabs();
+  document.getElementById('downloadRow').style.display = allExtracted.length ? '' : 'none';
+}
+
+// ═══════════════════════════════════════════════════
+// Result Tabs & Preview
+// ═══════════════════════════════════════════════════
+function renderResultTabs() {
+  const tabsRow = document.getElementById('resultTabsRow');
+  const tabsEl = document.getElementById('resultTabs');
+  const sheetNames = Object.keys(resultSheets);
+
+  if (sheetNames.length === 0) return;
+
+  tabsEl.innerHTML = '';
+
+  // "All combined" tab
+  const allTab = document.createElement('button');
+  allTab.className = 'result-tab active';
+  allTab.innerHTML = `All Sheets <span class="tab-count">${allExtracted.length}</span>`;
+  allTab.onclick = () => activateTab('__all', allTab);
+  tabsEl.appendChild(allTab);
+
+  sheetNames.forEach(name => {
+    const count = resultSheets[name].length;
+    const tab = document.createElement('button');
+    tab.className = 'result-tab';
+    tab.innerHTML = `${name} <span class="tab-count">${count}</span>`;
+    tab.onclick = () => activateTab(name, tab);
+    tabsEl.appendChild(tab);
+  });
+
+  tabsRow.style.display = '';
+  activateTab('__all', allTab);
+}
+
+function activateTab(sheetName, tabEl) {
+  document.querySelectorAll('.result-tab').forEach(t => t.classList.remove('active'));
+  tabEl.classList.add('active');
+  activeResultTab = sheetName;
+
+  const data = sheetName === '__all' ? allExtracted : resultSheets[sheetName];
+  renderTable(data, sheetName === '__all');
+}
+
+function renderTable(data, showSheetCol) {
+  document.getElementById('emptyState').style.display = data.length ? 'none' : '';
+  document.getElementById('tableScroll').style.display = data.length ? '' : 'none';
+  if (!data.length) return;
+
+  const cols = Object.keys(data[0]).filter(k => k !== '__sheet');
+  const filters = getFilters();
+
+  // Head
+  const head = document.getElementById('previewHead');
+  let thHtml = '';
+  if (showSheetCol) thHtml += '<th>Sheet</th>';
+  cols.forEach((c, i) => {
+    const num = allHeaders.indexOf(c) + 1;
+    thHtml += `<th><span class="th-num">${num||'?'}</span>${c}</th>`;
+  });
+  head.innerHTML = '<tr>' + thHtml + '</tr>';
+
+  // Body (max 200 rows)
+  const body = document.getElementById('previewBody');
+  body.innerHTML = '';
+  data.slice(0, 200).forEach(row => {
+    const tr = document.createElement('tr');
+    if (showSheetCol) {
+      const td = document.createElement('td');
+      td.innerHTML = `<span class="sheet-source-badge">${row.__sheet}</span>`;
+      tr.appendChild(td);
+    }
+    cols.forEach(col => {
+      const td = document.createElement('td');
+      let val = String(row[col] ?? '');
+      // Highlight matches
+      filters.forEach(f => {
+        if (f.col === col && f.op !== 'not_contains' && f.op !== 'regex') {
+          const idx = val.toLowerCase().indexOf(f.val.toLowerCase());
+          if (idx !== -1) {
+            val = val.slice(0,idx) +
+              `<span class="match-val">${val.slice(idx, idx+f.val.length)}</span>` +
+              val.slice(idx+f.val.length);
+          }
+        }
+      });
+      td.innerHTML = val || '<span style="color:var(--muted)">—</span>';
+      td.title = String(row[col] ?? '');
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// Download
+// ═══════════════════════════════════════════════════
+function downloadExcel() {
+  if (!allExtracted.length) return;
+  const wb2 = XLSX.utils.book_new();
+
+  // One sheet per source, plus combined
+  const sheetNames = Object.keys(resultSheets);
+  if (sheetNames.length > 1) {
+    // Combined sheet (strip __sheet key)
+    const combined = allExtracted.map(r => { const o={...r}; delete o.__sheet; return o; });
+    XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(combined), 'All Combined');
+    // Individual sheets
+    sheetNames.forEach(name => {
+      const rows = resultSheets[name].map(r => { const o={...r}; delete o.__sheet; return o; });
+      if (rows.length) XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(rows), name.slice(0,31));
+    });
+  } else {
+    const rows = allExtracted.map(r => { const o={...r}; delete o.__sheet; return o; });
+    XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(rows), 'Extracted');
+  }
+
+  XLSX.writeFile(wb2, 'extracted_data.xlsx');
+}
+
+function downloadCSV() {
+  if (!allExtracted.length) return;
+  const rows = allExtracted.map(r => { const o={...r}; delete o.__sheet; return o; });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const csv = XLSX.utils.sheet_to_csv(ws);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='extracted_data.csv';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════════
+// Status
+// ═══════════════════════════════════════════════════
+function setStatus(msg, type) {
+  const el = document.getElementById('statusBar');
+  el.textContent = msg;
+  el.className = 'status-bar ' + type;
+}
+</script>
+</body>
+</html>
